@@ -19,6 +19,15 @@ define("port", default=8888, help="run on the given port", type=int)
 
 # we gonna store clients in dictionary..
 clients = set()
+last_alert = None
+camera_loop = None
+width = 640
+height = 480        
+
+cam = cv2.VideoCapture(0)        
+# set crop factor
+cam.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+cam.set(cv2.CAP_PROP_FRAME_WIDTH, width)  
 
 class IndexHandler(tornado.web.RequestHandler):
     @tornado.web.asynchronous
@@ -41,60 +50,45 @@ class CoordinatesHandler(tornado.web.RequestHandler):
 class WebSocketHandler(tornado.websocket.WebSocketHandler):
     def __init__(self, application, request, **kwargs):
         super(WebSocketHandler, self).__init__(application, request, **kwargs)
-        self.cam = None
-        self.last_alert = None
-        self.camera_loop = None
-        self.width = 640
-        self.height = 480        
 
     def check_origin(self, origin):
         return True
 
     def open(self, *args):
-        # clients.add(self) # add client for broadcasting
-        self.cam = cv2.VideoCapture(0)        
-        # set crop factor
-        self.cam.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
-        self.cam.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)        
-
-        self.camera_loop = PeriodicCallback(self.loop, 30)
-        self.camera_loop.start()
-
-
-    @gen.coroutine
-    def loop(self):
-        ret_val, img = self.cam.read()
-        #img = cv2.resize(imgread, (self.width, self.height), interpolation = cv2.INTER_AREA)
-
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        # faces = face_cascade.detectMultiScale(gray, 1.3, 5)
-        cars = car_cascade.detectMultiScale(gray, 1.3, 5)
-        if len(cars) > 0:
-            now = datetime.datetime.now()
-            #send an alert every 5 minutes if vehicle still present
-            if not self.last_alert or self.last_alert < now - datetime.timedelta(minutes = 5):
-                self.last_alert = now
-                send_email(
-                    'hackthecity17', 
-                    'safecamproject', 
-                    ['pietroghezzi.ch@gmail.com', 'adriatik.dushica@gmail.com'],
-                    'Test', 
-                    'bella zio!!!'
-                )
-
-        #for (x, y, w, h) in faces:
-        #    cv2.rectangle(img, (x, y), (x+w, y+h), (255, 0, 0), 2)
-        for (x, y, w, h) in cars:
-            cv2.rectangle(img, (x, y), (x+w, y+h), (255, 0, 0), 2)
-        try:            
-            ret, image = cv2.imencode('.jpg', img)
-            self.write_message(base64.b64encode(image))
-        except tornado.websocket.WebSocketClosedError:
-            self.cam.release()
-
+        clients.add(self) # add client for broadcasting
+        
     def on_close(self):
         clients.remove(self)
 
+
+@gen.coroutine
+def loop():
+    ret_val, img = cam.read()        
+
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    cars = face_cascade.detectMultiScale(gray, 1.3, 5)
+    
+    if len(cars) > 0:
+        now = datetime.datetime.now()
+        #send an alert every 5 minutes if vehicle still present
+        ''' if not last_alert or last_alert < now - datetime.timedelta(minutes = 5):
+            last_alert = now
+            send_email(
+                'hackthecity17', 
+                'safecamproject', 
+                ['pietroghezzi.ch@gmail.com', 'adriatik.dushica@gmail.com'],
+                'Test', 
+                'bella zio!!!'
+            ) '''
+
+    for (x, y, w, h) in cars:
+        cv2.rectangle(img, (x, y), (x+w, y+h), (255, 0, 0), 2)
+    try:            
+        ret, image = cv2.imencode('.jpg', img)
+        for client in clients:
+            client.write_message(base64.b64encode(image))
+    except tornado.websocket.WebSocketClosedError:
+        cam.release()
 
 @gen.coroutine
 def send_email(user, pwd, recipient, subject, body):
@@ -130,4 +124,6 @@ app = tornado.web.Application([
 if __name__ == '__main__':
     parse_command_line()
     app.listen(options.port)
+    camera_loop = PeriodicCallback(loop, 40)
+    camera_loop.start()
     tornado.ioloop.IOLoop.instance().start()
