@@ -6,6 +6,8 @@ import tornado.autoreload
 import tornado.gen as gen
 import cv2
 import base64
+import smtplib
+import datetime
 
 from tornado.options import define, options, parse_command_line
 from tornado.ioloop import PeriodicCallback
@@ -37,18 +39,24 @@ class CoordinatesHandler(tornado.web.RequestHandler):
 
 
 class WebSocketHandler(tornado.websocket.WebSocketHandler):
+    def __init__(self, application, request, **kwargs):
+        super(WebSocketHandler, self).__init__(application, request, **kwargs)
+        self.cam = None
+        self.last_alert = None
+        self.camera_loop = None
+        self.width = 640
+        self.height = 480        
+
     def open(self, *args):
         clients.add(self) # add client for broadcasting
 
     def on_message(self, message):
-        self.cam = cv2.VideoCapture(0)
-        self.width = 640
-        self.height = 480
+        self.cam = cv2.VideoCapture(0)        
         # set crop factor
         self.cam.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
         self.cam.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)        
 
-        if message == "start":
+        if message == "start": # TODO implement stop recording
             self.camera_loop = PeriodicCallback(self.loop, 30)
             self.camera_loop.start()
         else:
@@ -63,9 +71,21 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         # faces = face_cascade.detectMultiScale(gray, 1.3, 5)
         cars = car_cascade.detectMultiScale(gray, 1.3, 5)
+        if len(cars) > 0:
+            now = datetime.datetime.now()
+            #send an alert every 5 minutes if vehicle still present
+            if not self.last_alert or self.last_alert < now - datetime.timedelta(minutes = 5):
+                self.last_alert = now
+                send_email(
+                    'hackthecity17', 
+                    'safecamproject', 
+                    ['pietroghezzi.ch@gmail.com', 'adriatik.dushica@gmail.com'],
+                    'Test', 
+                    'bella zio!!!'
+                )
+
         #for (x, y, w, h) in faces:
         #    cv2.rectangle(img, (x, y), (x+w, y+h), (255, 0, 0), 2)
-        print('cars %s' % len(cars))
         for (x, y, w, h) in cars:
             cv2.rectangle(img, (x, y), (x+w, y+h), (255, 0, 0), 2)
         try:            
@@ -77,6 +97,31 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
     def on_close(self):
         clients.remove(self)
 
+
+@gen.coroutine
+def send_email(user, pwd, recipient, subject, body):
+    import smtplib
+
+    gmail_user = user
+    gmail_pwd = pwd
+    FROM = 'Safe cam admin'
+    TO = recipient if type(recipient) is list else [recipient]
+    SUBJECT = subject
+    TEXT = body
+
+    # Prepare actual message
+    message = """From: %s\nTo: %s\nSubject: %s\n\n%s
+    """ % (FROM, ", ".join(TO), SUBJECT, TEXT)
+    try:
+        server = smtplib.SMTP("smtp.gmail.com", 587)
+        server.ehlo()
+        server.starttls()
+        server.login(gmail_user, gmail_pwd)
+        server.sendmail(FROM, TO, message)
+        server.close()
+        print('successfully sent the mail')
+    except:
+        print('failed to send mail')
 
 app = tornado.web.Application([
     (r'/', IndexHandler),
