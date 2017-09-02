@@ -47,20 +47,18 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
         self.width = 640
         self.height = 480        
 
-    def open(self, *args):
-        clients.add(self) # add client for broadcasting
+    def check_origin(self, origin):
+        return True
 
-    def on_message(self, message):
+    def open(self, *args):
+        # clients.add(self) # add client for broadcasting
         self.cam = cv2.VideoCapture(0)        
         # set crop factor
         self.cam.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
         self.cam.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)        
 
-        if message == "start": # TODO implement stop recording
-            self.camera_loop = PeriodicCallback(self.loop, 30)
-            self.camera_loop.start()
-        else:
-            print("Unsupported function: " + message)
+        self.camera_loop = PeriodicCallback(self.loop, 30)
+        self.camera_loop.start()
 
 
     @gen.coroutine
