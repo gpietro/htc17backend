@@ -63,6 +63,7 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
 
 @gen.coroutine
 def loop():
+    global last_alert
     ret_val, img = cam.read()        
 
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -71,7 +72,7 @@ def loop():
     if len(cars) > 0:
         now = datetime.datetime.now()
         #send an alert every 5 minutes if vehicle still present
-        ''' if not last_alert or last_alert < now - datetime.timedelta(minutes = 5):
+        if not last_alert or last_alert < now - datetime.timedelta(minutes = 5):
             last_alert = now
             send_email(
                 'hackthecity17', 
@@ -79,7 +80,7 @@ def loop():
                 ['pietroghezzi.ch@gmail.com', 'adriatik.dushica@gmail.com'],
                 'Test', 
                 'bella zio!!!'
-            ) '''
+            ) 
 
     for (x, y, w, h) in cars:
         cv2.rectangle(img, (x, y), (x+w, y+h), (255, 0, 0), 2)
@@ -124,6 +125,6 @@ app = tornado.web.Application([
 if __name__ == '__main__':
     parse_command_line()
     app.listen(options.port)
-    camera_loop = PeriodicCallback(loop, 40)
+    camera_loop = PeriodicCallback(loop, 100)
     camera_loop.start()
     tornado.ioloop.IOLoop.instance().start()
