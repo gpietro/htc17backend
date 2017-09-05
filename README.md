@@ -1,2 +1,7 @@
 # htc17backend
-Hack the city
+
+Hackathon project for HackTheCity Chiasso.
+
+Vehicle detection with opencv on Raspberry PiCamera.
+
+Streaming video using Tornado framework.
